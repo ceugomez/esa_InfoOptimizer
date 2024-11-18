@@ -1,4 +1,4 @@
-using Plots, Optimization
+using Optimization, PlotlyJS
 
 # Function to define the information field
 function infoField(pos::Vector{Float64})
@@ -9,11 +9,10 @@ function infoField(pos::Vector{Float64})
 end
 
 # Function to visualize the information field
-# Function to visualize the information field
 function visualizeField(dims::Matrix{Int64})
     # Create the grid for evaluation
-    xarray = dims[1, 1]:0.5:dims[1, 2]
-    yarray = dims[2, 1]:0.5:dims[2, 2]
+    xarray = dims[1, 1]:0.1:dims[1, 2]
+    yarray = dims[2, 1]:0.1:dims[2, 2]
 
     # Initialize arrays for scatter plot data
     x_values = Float64[]
@@ -28,29 +27,38 @@ function visualizeField(dims::Matrix{Int64})
         end
     end
 
-    # Normalize z_values to [0, 1] for consistent color mapping
-    z_min, z_max = minimum(z_values), maximum(z_values)
-    normalized_z = (z_values .- z_min) ./ (z_max - z_min)
-
-    # Scatter plot in 3D with a colorscheme
-    fig = scatter3d(
-        x_values, y_values, z_values,
-        color = normalized_z,               # Map normalized values to colors
-        c = :viridis,                       # Use a colormap (e.g., Viridis)
-        xlabel = "X", ylabel = "Y", zlabel = "Information Value",
-        marker = :circle, legend = false,
-        show=false
-    )
+    fig = plot(scatter(
+        x=x_values,
+        y=y_values,
+        z=z_values,
+        mode="markers",
+        marker=attr(
+            size=3,
+            color=z_values,                # set color to an array/list of desired values
+            colorscale="Viridis",   # choose a colorscale
+            opacity=0.8
+        ),
+        dpi=1200,
+        type="scatter3d"
+        ), Layout(margin=attr(l=0, r=0, b=0, t=0)))
     savefig(fig,"./figures/test.png")
     return fig;
 end
+function reward(X, agentPositions)
+    # build base function 
+    J = infoField(X);
 
+
+end
 
 # Main script
 begin
-    noAgents::Int64 = 3            # Number of agents to consider
-    dims = [-1 1; -1 1; 0 2]  # Environment dimensions
-
-    # Visualize the information field
-    visualizeField(dims)
+    noAgents::Int64 = 3             # no. of agents to consider
+    dims = [-1 1; -1 1; 0 2]        # environment dimensions
+    visualizeField(dims)            # create field visualization
+    x0 = [0 0];                     # starting guess
+    p = [1e3, 1e3];
+    for i in noAgents
+        problem = OptimizationProblem(reward, x0, p)        
+    end
 end
