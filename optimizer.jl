@@ -12,17 +12,82 @@ struct problemStatement
     agents::Int64
     dims::Matrix{Int64}
     OptMethod::String
-	pos::Vector{Vector{Float64}}
+    pos::Vector{Vector{Float64}}
+end
+# Function to define the information field - Rastrigin
+function infoField(pos::Vector{Float64})
+    # Extract position components
+    x, y = pos[1], pos[2]
+    
+    # Scaling factors
+    xmin, xmax = -30.0, 30.0
+    ymin, ymax = -30.0, 30.0
+    
+    # Normalize variables to [0, 1] range
+    x_scaled = (x - xmin) / (xmax - xmin) * 5.12  # Scaling to match Rastrigin's typical domain
+    y_scaled = (y - ymin) / (ymax - ymin) * 5.12
+    
+    # Rastrigin function parameters
+    A = 10.0
+    
+    # Compute Rastrigin function
+    info = 2 * A + (x_scaled^2 - A * cos(2 * π * x_scaled)) + (y_scaled^2 - A * cos(2 * π * y_scaled))
+    
+    return info
 end
 
-# Function to define the information field
-function infoField(pos::Vector{Float64})
+# Function to define the informatiion field - Ackley Mode
+#=function infoField(pos::Vector{Float64})
+    # Extract position components
+    x, y = pos[1], pos[2]
+
+    # Ackley parameters
+    a = 20.0
+    b = 0.2
+    c = 2π
+
+    # Compute Ackley function
+    term1 = -a * exp(-b * sqrt(0.5 * (x^2 + y^2)))
+    term2 = -exp(0.5 * (cos(c * x) + cos(c * y)))
+    ackley = term1 + term2 + a + exp(1)
+
+    return -ackley
+end
+=#
+# Function to define the information field - Big Hill Mode
+#= function infoField(pos::Vector{Float64})
     x, y, z = pos[1], pos[2], pos[3]
     R = sqrt((x / 3)^2 + (y / 3)^2)
     info = (-sin(R) + 1) * 30 - R^2# ensure positive
     return info
 end
-#end
+=#
+# Function to define the information field - Rosenbrock Mode
+#= function infoField(pos::Vector{Float64})
+    # Extract position components
+    x, y, z = pos[1], pos[2], pos[3]
+
+    # Domain bounds
+    xmin, xmax = -30.0, 30.0
+    ymin, ymax = -30.0, 30.0
+    zmin, zmax = 0.0, 2.0
+
+    # Normalize variables to [0, 1] range
+    x_scaled = (x - xmin) / ((xmax - xmin)*0.1)
+    y_scaled = (y - ymin) / ((ymax - ymin)*0.1)
+    z_scaled = (z - zmin) / ((zmax - zmin)*0.1)
+
+    # Rosenbrock parameters
+    a = 1.0
+    b = 3.0
+    c = 3.0
+
+    # Scaled Rosenbrock function
+    info = ((a - x_scaled)^2 + b * (y_scaled - x_scaled^2)^2)/1e3
+    return info
+end
+ =#
+# Modified reward with constraints 
 function reward(X)
     # Extract position components
     x, y, z = X[1], X[2], X[3]
@@ -47,8 +112,20 @@ function reward(X)
 
     penalty = barrier(x, xmin, xmax) + barrier(y, ymin, ymax) + barrier(z, zmin, zmax)
 
-    # Combine the base value and penalty
-    J = -value + 10 * penalty  # Scale penalty to balance with objective
+
+    # Repulsion penalty for avoiding co-location with other agents
+    repulsion_penalty = 0.0
+    if !isempty(prob.pos)
+        for other_agent in prob.pos
+            distance_squared = (x - other_agent[1])^2 + (y - other_agent[2])^2 + (z - other_agent[3])^2
+            if distance_squared > 0  # Avoid division by zero
+                repulsion_penalty += 1 / distance_squared  # Higher penalty for closer agents
+            end
+        end
+    end
+
+    # Combine the base value, barrier function, and 
+    J = -value + 10 * penalty + 10 * repulsion_penalty # Scale penalty to balance with objective
 
     return J
 end
@@ -109,10 +186,11 @@ function visualizeField(dims::Matrix{Int64}, flags::Vector{Bool})
             println("Plotting Contours....")
             plt = figure()
             ax = plt.add_subplot(111)
-            contourf(X, Y, reshape(Z, size(X)), cmap="viridis", levels=collect(minimum(Z):1:maximum(Z)))
-			for j in 1:length(prob.pos)
-				ax.scatter(prob.pos[j][1], prob.pos[j][2], color="red", s=50, label="Point of Interest")
-			end
+            contourf(X, Y, reshape(Z, size(X)), cmap="viridis", levels=collect(minimum(Z):((maximum(Z) - minimum(Z))/45):maximum(Z)))
+            for j in 1:length(prob.pos)
+                temp = ax.scatter(prob.pos[j][1], prob.pos[j][2], color="red", s=50, label="Point of Interest")
+				temp.set_zorder(1)
+            end
             colorbar(label="Information Field Value")
             title("Information Field Visualization")
             xlabel("X")
@@ -127,15 +205,15 @@ function visualizeField(dims::Matrix{Int64}, flags::Vector{Bool})
             surf = ax.plot_surface(X, Y, reshape(Z, size(X)), cmap="viridis", vmin=minimum(Z) * 2)  # Plot the surface
             # Scatter plot the point on the surface
             colorbar(surf)  # Add a colorbar for reference
-			for j in 1:length(prob.pos)
-           		ax.scatter(prob.pos[j][1], prob.pos[j][2], infoField(prob.pos[j]), color="red", s=50, label="Point of Interest")
-			end
+            for j in 1:length(prob.pos)
+				temp = ax.scatter(prob.pos[j][1], prob.pos[j][2], infoField(prob.pos[j]), color="red", s=50, label="Point of Interest")
+				temp.set_zorder(1);
+            end
             xlabel("X-axis")
             ylabel("Y-axis")
             ax.set_zlabel("Z-axis")
             title("Information Value Map |x=" * string(trunc(prob.pos[1][3], digits=2, base=10)))
             savefig("./figures/Info_surface.png", dpi=300, bbox_inches="tight")
-            show()
         end
         # Case : Reward Function Surface
         if (flags[i] == 1 && i == 3)#show reward function for minimization
@@ -146,17 +224,18 @@ function visualizeField(dims::Matrix{Int64}, flags::Vector{Bool})
             surf = ax.plot_surface(X, Y, reshape(Z, size(X)), cmap="viridis", vmin=minimum(Z) * 2)  # Plot the surface
             Z = [infoField([x, y, 1]) for (x, y) in zip(X[:], Y[:])]
             colorbar(surf)  # Add a colorbar for reference
-			for j in 1:length(prob.pos)
-				ax.scatter(prob.pos[j][1], prob.pos[j][2], infoField(prob.pos[j]), color="red", s=50, label="Point of Interest")
-		 	end
+            for j in 1:length(prob.pos)
+               	temp = ax.scatter(prob.pos[j][1], prob.pos[j][2], infoField(prob.pos[j]), color="red", s=50, label="Point of Interest")
+				temp.set_zorder(1)
+			end
             xlabel("X-axis")
             ylabel("Y-axis")
             ax.set_zlabel("Z-axis")
-            title("Reward Function Map Map |x=" * string(trunc(prob.pos[3], digits=2, base=10)))
+            title("Reward Function Map Map |x=" * string(trunc(prob.pos[1][3], digits=2, base=10)))
             savefig("./figures/Reward_surface.png", dpi=300, bbox_inches="tight")
-            show()
         end
     end
+    show()
     return nothing
 end
 
@@ -172,18 +251,18 @@ end
 
 # Main script
 begin
-    global prob = problemStatement(5, [-30 30; -30 30; 0 2], "Cross-Entropy",Vector{Vector{Float64}}()) # Number of agents to consider, Environment dimension, opt method
+    global prob = problemStatement(5, [-30 30; -30 30; 0 2], "Cross-Entropy", Vector{Vector{Float64}}()) # Number of agents to consider, Environment dimension, opt method
     printStartupScript(prob)
     x0 = [0.0, 0.0, 0.0]               # Starting guess
     p = [60, 60, 2]
-    tol = 1e-5
+    tol = 1e-12
     # Iteratively solve position problem 
-	for i in 1:prob.agents
-		# optimize
-		result = crossentropy(reward, x0, tol)
-    	# output position
-		println("Agent Position: " * string(trunc(result.result[1], digits=3, base=10)) * ", " * string(trunc(result.result[2], digits=3, base=10)) * ", " * string(trunc(result.result[3], digits=3, base=10)))
-		push!(prob.pos, result.result)
-	end
-	visualizeField(prob.dims, [true, true, true])          # Create field visualization
+    for i in 1:prob.agents
+        # optimize
+        result = crossentropy(reward, x0, tol)
+        # output position
+        println("Agent Position: " * string(trunc(result.result[1], digits=3, base=10)) * ", " * string(trunc(result.result[2], digits=3, base=10)) * ", " * string(trunc(result.result[3], digits=3, base=10)))
+        push!(prob.pos, result.result)
+    end
+    visualizeField(prob.dims, [true, true, true])          # Create field visualization
 end
