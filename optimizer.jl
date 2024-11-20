@@ -13,6 +13,7 @@ struct problemStatement
     dims::Matrix{Int64}
     OptMethod::String
     pos::Vector{Vector{Float64}}
+	R::Float64
 end
 # Function to define the information field - Rastrigin
 function infoField(pos::Vector{Float64})
@@ -118,14 +119,14 @@ function reward(X)
     if !isempty(prob.pos)
         for other_agent in prob.pos
             distance_squared = (x - other_agent[1])^2 + (y - other_agent[2])^2 + (z - other_agent[3])^2
-            if distance_squared > 0  # Avoid division by zero
+            if (distance_squared > 0 && distance_squared < (prob.R+5)^2)  # Avoid division by zero
                 repulsion_penalty += 1 / distance_squared  # Higher penalty for closer agents
             end
         end
     end
 
     # Combine the base value, barrier function, and 
-    J = -value + 10 * penalty + 10 * repulsion_penalty # Scale penalty to balance with objective
+    J = -value + 10 * penalty + 20 * repulsion_penalty # Scale penalty to balance with objective
 
     return J
 end
@@ -189,7 +190,7 @@ function visualizeField(dims::Matrix{Int64}, flags::Vector{Bool})
             contourf(X, Y, reshape(Z, size(X)), cmap="viridis", levels=collect(minimum(Z):((maximum(Z) - minimum(Z))/45):maximum(Z)))
             for j in 1:length(prob.pos)
                 temp = ax.scatter(prob.pos[j][1], prob.pos[j][2], color="red", s=50, label="Point of Interest")
-				temp.set_zorder(1)
+				temp.set_zorder(5)
             end
             colorbar(label="Information Field Value")
             title("Information Field Visualization")
@@ -206,8 +207,8 @@ function visualizeField(dims::Matrix{Int64}, flags::Vector{Bool})
             # Scatter plot the point on the surface
             colorbar(surf)  # Add a colorbar for reference
             for j in 1:length(prob.pos)
-				temp = ax.scatter(prob.pos[j][1], prob.pos[j][2], infoField(prob.pos[j]), color="red", s=50, label="Point of Interest")
-				temp.set_zorder(1);
+				temp = ax.scatter(prob.pos[j][1], prob.pos[j][2], infoField(prob.pos[j]), color="red", s=150, label="Point of Interest")
+				temp.set_zorder(5);
             end
             xlabel("X-axis")
             ylabel("Y-axis")
@@ -225,9 +226,13 @@ function visualizeField(dims::Matrix{Int64}, flags::Vector{Bool})
             Z = [infoField([x, y, 1]) for (x, y) in zip(X[:], Y[:])]
             colorbar(surf)  # Add a colorbar for reference
             for j in 1:length(prob.pos)
-               	temp = ax.scatter(prob.pos[j][1], prob.pos[j][2], infoField(prob.pos[j]), color="red", s=50, label="Point of Interest")
-				temp.set_zorder(1)
+               	temp = ax.scatter(prob.pos[j][1], prob.pos[j][2], infoField(prob.pos[j]), color="red", s=150, label="Point of Interest")
+				temp.set_zorder(5)
 			end
+			xlim(prob.dims[1,1],prob.dims[1,2]);
+			ylim(prob.dims[2,1],prob.dims[2,2])
+			zlim(minimum(Z)-5, maximum(Z)+5)
+
             xlabel("X-axis")
             ylabel("Y-axis")
             ax.set_zlabel("Z-axis")
@@ -251,7 +256,7 @@ end
 
 # Main script
 begin
-    global prob = problemStatement(5, [-30 30; -30 30; 0 2], "Cross-Entropy", Vector{Vector{Float64}}()) # Number of agents to consider, Environment dimension, opt method
+    global prob = problemStatement(5, [-30 30; -30 30; 0 2], "Cross-Entropy", Vector{Vector{Float64}}(),10) # Number of agents to consider, Environment dimension, opt method
     printStartupScript(prob)
     x0 = [0.0, 0.0, 0.0]               # Starting guess
     p = [60, 60, 2]
