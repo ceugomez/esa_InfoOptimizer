@@ -15,79 +15,21 @@ struct problemStatement
     pos::Vector{Vector{Float64}}
 	R::Float64
 end
-# Function to define the information field - Rastrigin
+# convenience function - print problem statement 
+function printStartupScript(params::problemStatement)
+    println("cgf cego6160@colorado.edu 11.18.24")
+    println("Initializing...")
+    println(string(params.agents) * " Agents")
+    println("Dimensions: " * string(params.dims[1, 2] - params.dims[1, 1]) * " x " * string(params.dims[2, 2] - params.dims[2, 1]) * " x " * string(params.dims[3, 2] - params.dims[3, 1]))
+    println("Optimization: " * params.OptMethod)
+    println("Running...")
+end
+ # Function to define the information field - quadratic
 function infoField(pos::Vector{Float64})
-    # Extract position components
-    x, y = pos[1], pos[2]
-    
-    # Scaling factors
-    xmin, xmax = -30.0, 30.0
-    ymin, ymax = -30.0, 30.0
-    
-    # Normalize variables to [0, 1] range
-    x_scaled = (x - xmin) / (xmax - xmin) * 5.12  # Scaling to match Rastrigin's typical domain
-    y_scaled = (y - ymin) / (ymax - ymin) * 5.12
-    
-    # Rastrigin function parameters
-    A = 10.0
-    
-    # Compute Rastrigin function
-    info = 2 * A + (x_scaled^2 - A * cos(2 * π * x_scaled)) + (y_scaled^2 - A * cos(2 * π * y_scaled))
-    
-    return info
-end
-
-# Function to define the informatiion field - Ackley Mode
-#=function infoField(pos::Vector{Float64})
-    # Extract position components
-    x, y = pos[1], pos[2]
-
-    # Ackley parameters
-    a = 20.0
-    b = 0.2
-    c = 2π
-
-    # Compute Ackley function
-    term1 = -a * exp(-b * sqrt(0.5 * (x^2 + y^2)))
-    term2 = -exp(0.5 * (cos(c * x) + cos(c * y)))
-    ackley = term1 + term2 + a + exp(1)
-
-    return -ackley
-end
-=#
-# Function to define the information field - Big Hill Mode
-#= function infoField(pos::Vector{Float64})
     x, y, z = pos[1], pos[2], pos[3]
-    R = sqrt((x / 3)^2 + (y / 3)^2)
-    info = (-sin(R) + 1) * 30 - R^2# ensure positive
-    return info
+    return -2(x+3)^2 - 3(y-5)^2 - 300*(z-1)^2 + 3000
 end
-=#
-# Function to define the information field - Rosenbrock Mode
-#= function infoField(pos::Vector{Float64})
-    # Extract position components
-    x, y, z = pos[1], pos[2], pos[3]
 
-    # Domain bounds
-    xmin, xmax = -30.0, 30.0
-    ymin, ymax = -30.0, 30.0
-    zmin, zmax = 0.0, 2.0
-
-    # Normalize variables to [0, 1] range
-    x_scaled = (x - xmin) / ((xmax - xmin)*0.1)
-    y_scaled = (y - ymin) / ((ymax - ymin)*0.1)
-    z_scaled = (z - zmin) / ((zmax - zmin)*0.1)
-
-    # Rosenbrock parameters
-    a = 1.0
-    b = 3.0
-    c = 3.0
-
-    # Scaled Rosenbrock function
-    info = ((a - x_scaled)^2 + b * (y_scaled - x_scaled^2)^2)/1e3
-    return info
-end
- =#
 # Modified reward with constraints 
 function reward(X)
     # Extract position components
@@ -130,7 +72,6 @@ function reward(X)
 
     return J
 end
-
 # cross-entropy optimizer
 function crossentropy(f, x0, ϵ)
     μ = x0                              # Initial mean guess
@@ -166,97 +107,234 @@ function crossentropy(f, x0, ϵ)
 end
 # Function to visualize the information field
 function visualizeField(dims::Matrix{Int64}, flags::Vector{Bool})
-    # convenience function - replaces MeshGrid from python
+    # Generate a mesh grid (replacement for Python's MeshGrid)
     function generateMeshGrid(xrange::AbstractVector, yrange::AbstractVector)
         X = repeat(xrange', length(yrange), 1)
         Y = repeat(yrange, 1, length(xrange))
         return X, Y
     end
-    # Create the grid for evaluation
+
+    # Generate the grid for evaluation
     xarray = collect(dims[1, 1]:0.1:dims[1, 2])
     yarray = collect(dims[2, 1]:0.1:dims[2, 2])
-
-    # Generate grid points
     X, Y = generateMeshGrid(xarray, yarray)
+
+    # Helper function to save plots with consistent settings
+    function savePlot(fig, filename)
+        savefig(fig, filename, dpi=300, bbox_inches="tight")
+    end
+
+    # Compute the information field values for the grid
     Z = [infoField([x, y, prob.pos[1][3]]) for (x, y) in zip(X[:], Y[:])]
 
-    # Plot the information field
     for i in 1:length(flags)
-        # Case: Contour Plot 
-        if (flags[i] == true && i == 1)
-            println("Plotting Contours....")
+        if flags[i]
             plt = figure()
-            ax = plt.add_subplot(111)
-            contourf(X, Y, reshape(Z, size(X)), cmap="viridis", levels=collect(minimum(Z):((maximum(Z) - minimum(Z))/45):maximum(Z)))
-            for j in 1:length(prob.pos)
-                temp = ax.scatter(prob.pos[j][1], prob.pos[j][2], color="red", s=50, label="Point of Interest")
-				temp.set_zorder(5)
-            end
-            colorbar(label="Information Field Value")
-            title("Information Field Visualization")
-            xlabel("X")
-            ylabel("Y")
-            savefig("./figures/contour.png", dpi=300, bbox_inches="tight")
-        end
-        # Case: Info Field Surface
-        if (flags[i] == 1 && i == 2)
-            println("Plotting Info Field Surface...")
-            plt = figure()
-            ax = plt.add_subplot(111, projection="3d")  # Create a 3D subplot
-            surf = ax.plot_surface(X, Y, reshape(Z, size(X)), cmap="viridis", vmin=minimum(Z) * 2)  # Plot the surface
-            # Scatter plot the point on the surface
-            colorbar(surf)  # Add a colorbar for reference
-            for j in 1:length(prob.pos)
-				temp = ax.scatter(prob.pos[j][1], prob.pos[j][2], infoField(prob.pos[j]), color="red", s=150, label="Point of Interest")
-				temp.set_zorder(5);
-            end
-            xlabel("X-axis")
-            ylabel("Y-axis")
-            ax.set_zlabel("Z-axis")
-            title("Information Value Map |x=" * string(trunc(prob.pos[1][3], digits=2, base=10)))
-            savefig("./figures/Info_surface.png", dpi=300, bbox_inches="tight")
-        end
-        # Case : Reward Function Surface
-        if (flags[i] == 1 && i == 3)#show reward function for minimization
-            println("Plotting Reward Field Surface....")
-            Z = [reward([x, y, 1]) for (x, y) in zip(X[:], Y[:])]
-            plt = figure()
-            ax = plt.add_subplot(111, projection="3d")  # Create a 3D subplot
-            surf = ax.plot_surface(X, Y, reshape(Z, size(X)), cmap="viridis", vmin=minimum(Z) * 2)  # Plot the surface
-            Z = [infoField([x, y, 1]) for (x, y) in zip(X[:], Y[:])]
-            colorbar(surf)  # Add a colorbar for reference
-            for j in 1:length(prob.pos)
-               	temp = ax.scatter(prob.pos[j][1], prob.pos[j][2], infoField(prob.pos[j]), color="red", s=150, label="Point of Interest")
-				temp.set_zorder(5)
-			end
-			xlim(prob.dims[1,1],prob.dims[1,2]);
-			ylim(prob.dims[2,1],prob.dims[2,2])
-			zlim(minimum(Z)-5, maximum(Z)+5)
 
-            xlabel("X-axis")
-            ylabel("Y-axis")
-            ax.set_zlabel("Z-axis")
-            title("Reward Function Map Map |x=" * string(trunc(prob.pos[1][3], digits=2, base=10)))
-            savefig("./figures/Reward_surface.png", dpi=300, bbox_inches="tight")
+            if i == 1
+                # Contour Plot
+                println("Plotting Contours...")
+                ax = plt.add_subplot(111)
+                contourf(X, Y, reshape(Z, size(X)), cmap="viridis",
+                         levels=collect(minimum(Z):((maximum(Z) - minimum(Z)) / 45):maximum(Z)))
+                for j in 1:length(prob.pos)
+                    ax.scatter(prob.pos[j][1], prob.pos[j][2], color="red", s=50, label="Point of Interest").set_zorder(5)
+                end
+                colorbar(label="Information Field Value")
+                title("Information Field Visualization")
+                xlabel("X")
+                ylabel("Y")
+                savePlot(plt, "./figures/contour.png")
+
+            elseif i == 2
+                # Info Field Surface
+                println("Plotting Info Field Surface...")
+                ax = plt.add_subplot(111, projection="3d")
+                surf = ax.plot_surface(X, Y, reshape(Z, size(X)), cmap="viridis", vmin=minimum(Z) * 2)
+                colorbar(surf)
+                for j in 1:length(prob.pos)
+                    ax.scatter(prob.pos[j][1], prob.pos[j][2], infoField(prob.pos[j]),
+                               color="red", s=150, label="Point of Interest").set_zorder(5)
+                end
+                xlabel("X-axis")
+                ylabel("Y-axis")
+                ax.set_zlabel("Z-axis")
+                title("Information Value Map | x = $(round(prob.pos[1][3], digits=2))")
+                savePlot(plt, "./figures/Info_surface.png")
+
+            elseif i == 3
+                # Reward Function Surface
+                println("Plotting Reward Field Surface...")
+                Z_reward = [reward([x, y, 1]) for (x, y) in zip(X[:], Y[:])]
+                ax = plt.add_subplot(111, projection="3d")
+                surf = ax.plot_surface(X, Y, reshape(Z_reward, size(X)), cmap="viridis", vmin=minimum(Z_reward) * 2)
+                colorbar(surf)
+                for j in 1:length(prob.pos)
+                    ax.scatter(prob.pos[j][1], prob.pos[j][2], infoField(prob.pos[j]),
+                               color="red", s=150, label="Point of Interest").set_zorder(5)
+                end
+                xlim(prob.dims[1, 1], prob.dims[1, 2])
+                ylim(prob.dims[2, 1], prob.dims[2, 2])
+                zlim(minimum(Z_reward) - 5, maximum(Z_reward) + 5)
+                xlabel("X-axis")
+                ylabel("Y-axis")
+                ax.set_zlabel("Z-axis")
+                title("Reward Function Map | x = $(round(prob.pos[1][3], digits=2))")
+                savePlot(plt, "./figures/Reward_surface.png")
+            end
         end
     end
+
+    show()
+    return nothing
+end
+function plotInfoFieldContours(resolution::Float64)
+    """
+    Generate (x, y) and (y, z) contour plots of the information field using the global `prob` structure.
+
+    Parameters:
+        resolution::Float64 - Spacing between grid points (smaller values yield finer resolution).
+    """
+    global prob
+
+    # Extract domain bounds from `prob.dims`
+    xmin, xmax = prob.dims[1, :]
+    ymin, ymax = prob.dims[2, :]
+    zmin, zmax = prob.dims[3, :]
+
+    # Generate grid points
+    x_vals = collect(xmin:resolution:xmax)
+    y_vals = collect(ymin:resolution:ymax)
+    z_vals = collect(zmin:resolution:zmax)
+
+    # Compute (x, y) contour
+    X, Y = repeat(x_vals', length(y_vals), 1), repeat(y_vals, 1, length(x_vals))
+    Z_xy = [infoField([x, y, 1.0]) for (x, y) in zip(X[:], Y[:])]
+
+    # Plot (x, y) contour
+    plt.figure()
+    contourf(X, Y, reshape(Z_xy, size(X)), cmap="magma", levels=50)
+    colorbar(label="Info Field Value")
+    title("Information Field Contour: (x, y)")
+    xlabel("x")
+    ylabel("y")
+    # Overlay agent positions (x, y)
+    for (i,agent) in enumerate(prob.pos)
+        scatter(agent[1], agent[2], color="red", label="Agent $i", s=50)
+    end
+    legend()
+    savefig("./figures/xy_contour.png", dpi=300, bbox_inches="tight")
+    println("Saved (x, y) contour plot to './figures/xy_contour.png'.")
+
+    # Compute (y, z) contour
+    Y, Z = repeat(y_vals', length(z_vals), 1), repeat(z_vals, 1, length(y_vals))
+    Z_yz = [infoField([0.0, y, z]) for (y, z) in zip(Y[:], Z[:])]
+
+    # Plot (y, z) contour
+    plt.figure()
+    contourf(Y, Z, reshape(Z_yz, size(Y)), cmap="magma", levels=50)
+    colorbar(label="Info Field Value")
+    title("Information Field Contour: (y, z)")
+    xlabel("y")
+    ylabel("z")
+    # Overlay agent positions (y, z)
+    for (i,agent) in enumerate(prob.pos)
+        scatter(agent[2], agent[3], color="red", label="Agent $i", s=50)
+    end
+    legend()
+    savefig("./figures/yz_contour.png", dpi=300, bbox_inches="tight")
+    println("Saved (y, z) contour plot to './figures/yz_contour.png'.")
     show()
     return nothing
 end
 
-# convenience function - print problem statement 
-function printStartupScript(params::problemStatement)
-    println("cgf cego6160@colorado.edu 11.18.24")
-    println("Initializing...")
-    println(string(params.agents) * " Agents")
-    println("Dimensions: " * string(params.dims[1, 2] - params.dims[1, 1]) * " x " * string(params.dims[2, 2] - params.dims[2, 1]) * " x " * string(params.dims[3, 2] - params.dims[3, 1]))
-    println("Optimization: " * params.OptMethod)
-    println("Running...")
+function plotInfoFieldLineContours(resolution::Float64)
+    """
+    Generate (x, y), (y, z), and (x, z) contour plots of the information field using the global `prob` structure,
+    and overlay agent positions on the contours.
+
+    Parameters:
+        resolution::Float64 - Spacing between grid points (smaller values yield finer resolution).
+    """
+    global prob
+
+    # Extract domain bounds from `prob.dims`
+    xmin, xmax = prob.dims[1, :]
+    ymin, ymax = prob.dims[2, :]
+    zmin, zmax = prob.dims[3, :]
+
+    # Generate grid points
+    x_vals = collect(xmin:resolution:xmax)
+    y_vals = collect(ymin:resolution:ymax)
+    z_vals = collect(zmin:resolution:zmax)
+
+    # Compute (x, y) contour
+    X, Y = repeat(x_vals', length(y_vals), 1), repeat(y_vals, 1, length(x_vals))
+    Z_xy = [infoField([x, y, 1.0]) for (x, y) in zip(X[:], Y[:])]
+
+    # Plot (x, y) contour
+    plt.figure()
+    contour_lines = plt.contour(X, Y, reshape(Z_xy, size(X)), cmap="viridis", levels=20)
+    plt.clabel(contour_lines, inline=1, fontsize=8)
+    plt.title("Information Field Contour: (x, y)")
+    plt.xlabel("x")
+    plt.ylabel("y")
+    # Overlay agent positions (x, y)
+    for (i, agent) in enumerate(prob.pos)
+        scatter(agent[1], agent[2], color="red", label="Agent $i", s=50)
+    end
+    plt.legend()
+    savefig("./figures/xy_contour_lines.png", dpi=300, bbox_inches="tight")
+    println("Saved (x, y) contour plot to './figures/xy_contour_lines.png'.")
+
+    # Compute (y, z) contour
+    Y, Z = repeat(y_vals', length(z_vals), 1), repeat(z_vals, 1, length(y_vals))
+    Z_yz = [infoField([0.0, y, z]) for (y, z) in zip(Y[:], Z[:])]
+
+    # Plot (y, z) contour
+    plt.figure()
+    contour_lines = plt.contour(Y, Z, reshape(Z_yz, size(Y)), cmap="viridis", levels=20)
+    plt.clabel(contour_lines, inline=1, fontsize=8)
+    plt.title("Information Field Contour: (y, z)")
+    plt.xlabel("y")
+    plt.ylabel("z")
+    # Overlay agent positions (y, z)
+    for (i, agent) in enumerate(prob.pos)
+        scatter(agent[2], agent[3], color="red", label="Agent $i", s=50)
+    end
+    plt.legend()
+    savefig("./figures/yz_contour_lines.png", dpi=300, bbox_inches="tight")
+    println("Saved (y, z) contour plot to './figures/yz_contour_lines.png'.")
+
+    # Compute (x, z) contour
+    X, Z = repeat(x_vals', length(z_vals), 1), repeat(z_vals, 1, length(x_vals))
+    Z_xz = [infoField([x, 0.0, z]) for (x, z) in zip(X[:], Z[:])]
+
+    # Plot (x, z) contour
+    plt.figure()
+    contour_lines = plt.contour(X, Z, reshape(Z_xz, size(X)), cmap="viridis", levels=20)
+    plt.clabel(contour_lines, inline=1, fontsize=8)
+    plt.title("Information Field Contour: (x, z)")
+    plt.xlabel("x")
+    plt.ylabel("z")
+    # Overlay agent positions (x, z)
+    for (i, agent) in enumerate(prob.pos)
+        scatter(agent[1], agent[3], color="red", label="Agent $i", s=50)
+    end
+    plt.legend()
+    savefig("./figures/xz_contour_lines.png", dpi=300, bbox_inches="tight")
+    println("Saved (x, z) contour plot to './figures/xz_contour_lines.png'.")
+
+    plt.show()
+    return nothing
 end
+
+
+
 
 # Main script
 begin
-    global prob = problemStatement(5, [-30 30; -30 30; 0 2], "Cross-Entropy", Vector{Vector{Float64}}(),10) # Number of agents to consider, Environment dimension, opt method
+    global prob = problemStatement(1, [-30 30; -30 30; 0 2], "Cross-Entropy", Vector{Vector{Float64}}(),10) # Number of agents to consider, Environment dimension, opt method
     printStartupScript(prob)
     x0 = [0.0, 0.0, 0.0]               # Starting guess
     p = [60, 60, 2]
@@ -269,5 +347,8 @@ begin
         println("Agent Position: " * string(trunc(result.result[1], digits=3, base=10)) * ", " * string(trunc(result.result[2], digits=3, base=10)) * ", " * string(trunc(result.result[3], digits=3, base=10)))
         push!(prob.pos, result.result)
     end
-    visualizeField(prob.dims, [true, true, true])          # Create field visualization
+
+    #visualizeField(prob.dims, [true, true, true])          # Create field visualization
+    plotInfoFieldContours(0.5)  
+    plotInfoFieldLineContours(0.1)
 end
