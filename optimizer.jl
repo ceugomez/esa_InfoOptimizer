@@ -139,6 +139,7 @@ function crossentropy(f, x0, ϵ)
     return optimresult(μ, timer, i, genpop * i, f(μ))
 end
 # Functions to visualize the information field
+# Functions to visualize the information field
 function visualizeField(dims::Matrix{Int64}, flags::Vector{Bool})
     # Generate a mesh grid (replacement for Python's MeshGrid)
     function generateMeshGrid(xrange::AbstractVector, yrange::AbstractVector)
