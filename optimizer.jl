@@ -105,7 +105,7 @@ function crossentropy(f, x0, ϵ)
     # Return optimization result
     return optimresult(μ, timer, i, genpop * i, f(μ))
 end
-# Function to visualize the information field
+# Functions to visualize the information field
 function visualizeField(dims::Matrix{Int64}, flags::Vector{Bool})
     # Generate a mesh grid (replacement for Python's MeshGrid)
     function generateMeshGrid(xrange::AbstractVector, yrange::AbstractVector)
@@ -247,7 +247,6 @@ function plotInfoFieldContours(resolution::Float64)
     show()
     return nothing
 end
-
 function plotInfoFieldLineContours(resolution::Float64)
     """
     Generate (x, y), (y, z), and (x, z) contour plots of the information field using the global `prob` structure,
@@ -338,7 +337,7 @@ begin
     printStartupScript(prob)
     x0 = [0.0, 0.0, 0.0]               # Starting guess
     p = [60, 60, 2]
-    tol = 1e-12
+    tol = 1e-5
     # Iteratively solve position problem 
     for i in 1:prob.agents
         # optimize
@@ -346,6 +345,8 @@ begin
         # output position
         println("Agent Position: " * string(trunc(result.result[1], digits=3, base=10)) * ", " * string(trunc(result.result[2], digits=3, base=10)) * ", " * string(trunc(result.result[3], digits=3, base=10)))
         push!(prob.pos, result.result)
+        println("Time: ",result.time);
+        println("Fn Evals: ", result.fevals);
     end
 
     #visualizeField(prob.dims, [true, true, true])          # Create field visualization
