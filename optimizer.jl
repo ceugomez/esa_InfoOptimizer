@@ -29,57 +29,90 @@ function infoField(pos::Vector{Float64})
     x, y, z = pos[1], pos[2], pos[3]
     return -2(x+3)^2 - 3(y-5)^2 - 300*(z-1)^2 + 3000
 end
+function rfinbounds(lower_bound, upper_bound)::Float64
+    return lower_bound + rand() * (upper_bound - lower_bound)
+end
+function randInDomain()
+    # Extract bounds from prob.dims
+    xmin, xmax = prob.dims[1, :]
+    ymin, ymax = prob.dims[2, :]
+    zmin, zmax = prob.dims[3, :]
 
-# Modified reward with constraints 
+    # Generate random values within each dimension
+    x_rand = rfinbounds(xmin, xmax)
+    y_rand = rfinbounds(ymin, ymax)
+    z_rand = rfinbounds(zmin, zmax)
+
+    # Return the random point as a tuple or array
+    return [x_rand, y_rand, z_rand]
+end
+# Modified reward with constraints
 function reward(X)
-    # Extract position components
+    # extract position
     x, y, z = X[1], X[2], X[3]
 
-    # Compute base value from the information field
+    # get value before modification
     value = infoField(X)
 
-    # Define problem bounds
+    # extract bounds on domain
     xmin, xmax = prob.dims[1, 1], prob.dims[1, 2]
     ymin, ymax = prob.dims[2, 1], prob.dims[2, 2]
     zmin, zmax = prob.dims[3, 1], prob.dims[3, 2]
 
-    function barrier(v, vmin, vmax)
-        if v < vmin
-            return (v - vmin)^2
-        elseif v > vmax
-            return (v - vmax)^2
-        else
-            return 0.0
-        end
-    end
-
-    penalty = barrier(x, xmin, xmax) + barrier(y, ymin, ymax) + barrier(z, zmin, zmax)
-
-
-    # Repulsion penalty for avoiding co-location with other agents
-    repulsion_penalty = 0.0
-    if !isempty(prob.pos)
-        for other_agent in prob.pos
-            distance_squared = (x - other_agent[1])^2 + (y - other_agent[2])^2 + (z - other_agent[3])^2
-            if (distance_squared > 0 && distance_squared < (prob.R+5)^2)  # Avoid division by zero
-                repulsion_penalty += 1 / distance_squared  # Higher penalty for closer agents
+    # interior point methods
+    function log_barrier_inequality(v, threshold, direction)
+        diff = v - threshold
+        if direction == :greater  
+            if diff > 0
+                return -log(diff)
+            else
+                return Inf  
+            end
+        elseif direction == :less  
+            diff = threshold - v
+            if diff > 0
+                return -log(diff)
+            else
+                return Inf 
             end
         end
     end
 
-    # Combine the base value, barrier function, and 
-    J = -value + 10 * penalty + 20 * repulsion_penalty # Scale penalty to balance with objective
+    # Compute penalties for boundary constraints
+    bounds_penalty = 0.0
+    bounds_penalty += log_barrier_inequality(x, xmin, :greater)
+    bounds_penalty += log_barrier_inequality(x, xmax, :less)
+    bounds_penalty += log_barrier_inequality(y, ymin, :greater)
+    bounds_penalty += log_barrier_inequality(y, ymax, :less)
+    bounds_penalty += log_barrier_inequality(z, zmin, :greater)
+    bounds_penalty += log_barrier_inequality(z, zmax, :less)
+
+    # Repulsion penalty to maintain minimum distance of `prob.R` units
+    repulsion_penalty = 0.0
+    if !isempty(prob.pos)
+        for other_agent in prob.pos
+            dist = norm(X - other_agent)
+            # Add penalty for violating minimum distance
+            repulsion_penalty += log_barrier_inequality(dist, prob.R, :greater)
+        end
+    end
+
+    # Combine the base value, boundary penalty, and repulsion penalty
+    J = -value + bounds_penalty + repulsion_penalty
 
     return J
 end
 # cross-entropy optimizer
 function crossentropy(f, x0, ϵ)
     μ = x0                              # Initial mean guess
-    σ2 = Diagonal([1e3, 1e3, 1e3])           # Initial covariance guess
+    xmin, xmax = prob.dims[1, 1], prob.dims[1, 2]
+    ymin, ymax = prob.dims[2, 1], prob.dims[2, 2]
+    zmin, zmax = prob.dims[3, 1], prob.dims[3, 2]
+    σ2 = Diagonal((2*[xmax-xmin, ymax-ymin, zmax-zmin]))           # Initial covariance guess
     i = 1                               # Iterator
-    elites = 10                         # Number of elite samples
-    genpop = 100                        # Number of general samples
-    maxi = 10000                        # Iterator upper bound
+    elites = 100                         # Number of elite samples
+    genpop = 1000                        # Number of general samples
+    maxi = 1000000                        # Iterator upper bound
 
     # Use BenchmarkTools for precise timing
     timer = @elapsed begin
@@ -105,7 +138,7 @@ function crossentropy(f, x0, ϵ)
     # Return optimization result
     return optimresult(μ, timer, i, genpop * i, f(μ))
 end
-# Function to visualize the information field
+# Functions to visualize the information field
 function visualizeField(dims::Matrix{Int64}, flags::Vector{Bool})
     # Generate a mesh grid (replacement for Python's MeshGrid)
     function generateMeshGrid(xrange::AbstractVector, yrange::AbstractVector)
@@ -247,7 +280,6 @@ function plotInfoFieldContours(resolution::Float64)
     show()
     return nothing
 end
-
 function plotInfoFieldLineContours(resolution::Float64)
     """
     Generate (x, y), (y, z), and (x, z) contour plots of the information field using the global `prob` structure,
@@ -328,27 +360,105 @@ function plotInfoFieldLineContours(resolution::Float64)
     plt.show()
     return nothing
 end
+function plotRewardFieldLineContours(resolution::Float64)
+    """
+    Generate (x, y), (y, z), and (x, z) contour plots of the information field using the global `prob` structure,
+    and overlay agent positions on the contours.
 
+    Parameters:
+        resolution::Float64 - Spacing between grid points (smaller values yield finer resolution).
+    """
+    global prob
 
+    # Extract domain bounds from `prob.dims`
+    xmin, xmax = prob.dims[1, :]
+    ymin, ymax = prob.dims[2, :]
+    zmin, zmax = prob.dims[3, :]
 
+    # Generate grid points
+    x_vals = collect(xmin:resolution:xmax)
+    y_vals = collect(ymin:resolution:ymax)
+    z_vals = collect(zmin:resolution:zmax)
+
+    # Compute (x, y) contour
+    X, Y = repeat(x_vals', length(y_vals), 1), repeat(y_vals, 1, length(x_vals))
+    Z_xy = [reward([x, y, 1.0]) for (x, y) in zip(X[:], Y[:])]
+
+    # Plot (x, y) contour
+    plt.figure()
+    contour_lines = plt.contour(X, Y, reshape(Z_xy, size(X)), cmap="viridis", levels=20)
+    plt.clabel(contour_lines, inline=1, fontsize=8)
+    plt.title("Reward Field Contour: (x, y)")
+    plt.xlabel("x")
+    plt.ylabel("y")
+    # Overlay agent positions (x, y)
+    for (i, agent) in enumerate(prob.pos)
+        scatter(agent[1], agent[2], color="red", label="Agent $i", s=50)
+    end
+    plt.legend()
+    savefig("./figures/xy_contour_lines_reward.png", dpi=300, bbox_inches="tight")
+    println("Saved (x, y) contour plot to './figures/xy_contour_lines_reward.png'.")
+
+    # Compute (y, z) contour
+    Y, Z = repeat(y_vals', length(z_vals), 1), repeat(z_vals, 1, length(y_vals))
+    Z_yz = [infoField([0.0, y, z]) for (y, z) in zip(Y[:], Z[:])]
+
+    # Plot (y, z) contour
+    plt.figure()
+    contour_lines = plt.contour(Y, Z, reshape(Z_yz, size(Y)), cmap="viridis", levels=20)
+    plt.clabel(contour_lines, inline=1, fontsize=8)
+    plt.title("Reward Field Contour: (y, z)")
+    plt.xlabel("y")
+    plt.ylabel("z")
+    # Overlay agent positions (y, z)
+    for (i, agent) in enumerate(prob.pos)
+        scatter(agent[2], agent[3], color="red", label="Agent $i", s=50)
+    end
+    plt.legend()
+    savefig("./figures/yz_contour_lines_reward.png", dpi=300, bbox_inches="tight")
+    println("Saved (y, z) contour plot to './figures/yz_contour_lines_reward.png'.")
+
+    # Compute (x, z) contour
+    X, Z = repeat(x_vals', length(z_vals), 1), repeat(z_vals, 1, length(x_vals))
+    Z_xz = [reward([x, 0.0, z]) for (x, z) in zip(X[:], Z[:])]
+
+    # Plot (x, z) contour
+    plt.figure()
+    contour_lines = plt.contour(X, Z, reshape(Z_xz, size(X)), cmap="viridis", levels=20)
+    plt.clabel(contour_lines, inline=1, fontsize=8)
+    plt.title("Reward Field Contour: (x, z)")
+    plt.xlabel("x")
+    plt.ylabel("z")
+    # Overlay agent positions (x, z)
+    for (i, agent) in enumerate(prob.pos)
+        scatter(agent[1], agent[3], color="red", label="Agent $i", s=50)
+    end
+    plt.legend()
+    savefig("./figures/xz_contour_lines_reward.png", dpi=300, bbox_inches="tight")
+    println("Saved (x, z) contour plot to './figures/xz_contour_lines_reward.png'.")
+
+    plt.show()
+    return nothing
+end
 
 # Main script
 begin
-    global prob = problemStatement(1, [-30 30; -30 30; 0 2], "Cross-Entropy", Vector{Vector{Float64}}(),10) # Number of agents to consider, Environment dimension, opt method
-    printStartupScript(prob)
-    x0 = [0.0, 0.0, 0.0]               # Starting guess
-    p = [60, 60, 2]
-    tol = 1e-12
+    global prob = problemStatement(5, [-30.0 30.0; -30.0 30.0; 0.0 2.0], "Cross-Entropy", Vector{Vector{Float64}}(),2.0) # Number of agents to consider, Environment dimension, opt method
+    x0 = [0.0,0.0,0.0]#randInDomain()               # Starting guess
+    tol = 1e-5
     # Iteratively solve position problem 
     for i in 1:prob.agents
         # optimize
         result = crossentropy(reward, x0, tol)
         # output position
         println("Agent Position: " * string(trunc(result.result[1], digits=3, base=10)) * ", " * string(trunc(result.result[2], digits=3, base=10)) * ", " * string(trunc(result.result[3], digits=3, base=10)))
-        push!(prob.pos, result.result)
+        push!(prob.pos, result.result);
+        println("Time: $(result.time)");
+        println("Fn Evals: $(result.fevals)");
+        temp_result = infoField(prob.pos[i])
+        println("Fn Value: $(temp_result)");
     end
-
-    #visualizeField(prob.dims, [true, true, true])          # Create field visualization
-    plotInfoFieldContours(0.5)  
-    plotInfoFieldLineContours(0.1)
+    #plotInfoFieldContours(0.5)  
+    #plotInfoFieldLineContours(0.1)
+    #plotRewardFieldLineContours(0.1)
 end
