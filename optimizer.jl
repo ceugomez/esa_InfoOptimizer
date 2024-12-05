@@ -25,10 +25,39 @@ function printStartupScript(params::problemStatement)
     println("Running...")
 end
  # Function to define the information field - quadratic
-function infoField(pos::Vector{Float64})
-    x, y, z = pos[1], pos[2], pos[3]
-    return -2(x+3)^2 - 3(y-5)^2 - 300*(z-1)^2 + 3000
-end
+# function infoField(pos::Vector{Float64})
+#     x, y, z = pos[1], pos[2], pos[3]
+#     return -2(x+3)^2 - 3(y-5)^2 - 300*(z-1)^2 + 3000
+# end
+function infoField(xx::Vector{Float64})
+    # hartmann 3d, scaled
+    # Copyright 2013. Derek Bingham, Simon Fraser University (thanks!!)
+    x, y, z = xx[1], xx[2], xx[3]
+    xmin, xmax = prob.dims[1, :]
+    ymin, ymax = prob.dims[2, :]
+    zmin, zmax = prob.dims[3, :]
+    x_normalized = (x - xmin) / (xmax - xmin)
+    y_normalized = (y - ymin) / (ymax - ymin)
+    z_normalized = (z - zmin) / (zmax - zmin)
+    xvec_normalized = [x_normalized, y_normalized, z_normalized]
+    alpha = [1.0, 1.2, 3.0, 3.2]
+    A = [[3.0, 10.0, 30.0] [0.1, 10.0, 35.0] [ 3.0, 10, 30] [0.1, 10, 35]];
+    P = [[3689, 1170, 2673] [4699, 4387, 7470] [1091, 8732, 5547] [381, 5743, 8828]]
+    P = P.*10^(-4)
+    outer = 0;
+    for ii in 1:4
+        inner = 0;
+        for jj in 1:3
+            xj = xx[jj].*xvec_normalized[jj]/20+0.1
+            Aij = A[jj, ii]
+            Pij = P[jj, ii]
+            inner = inner + Aij*(xj-Pij)^2
+        end
+        new = alpha[ii] * exp(-inner)
+        outer = outer + new;
+    end
+    return 50*outer;
+end    
 function rfinbounds(lower_bound, upper_bound)::Float64
     return lower_bound + rand() * (upper_bound - lower_bound)
 end
@@ -138,7 +167,6 @@ function crossentropy(f, x0, ϵ)
     # Return optimization result
     return optimresult(μ, timer, i, genpop * i, f(μ))
 end
-# Functions to visualize the information field
 # Functions to visualize the information field
 function visualizeField(dims::Matrix{Int64}, flags::Vector{Bool})
     # Generate a mesh grid (replacement for Python's MeshGrid)
@@ -441,11 +469,10 @@ function plotRewardFieldLineContours(resolution::Float64)
     plt.show()
     return nothing
 end
-
 # Main script
 begin
-    global prob = problemStatement(5, [-30.0 30.0; -30.0 30.0; 0.0 2.0], "Cross-Entropy", Vector{Vector{Float64}}(),2.0) # Number of agents to consider, Environment dimension, opt method
-    x0 = [0.0,0.0,0.0]#randInDomain()               # Starting guess
+    global prob = problemStatement(3, [-30.0 30.0; -30.0 30.0; 0.0 2.0], "Cross-Entropy", Vector{Vector{Float64}}(),2.0) # Number of agents to consider, Environment dimension, opt method
+    x0 = randInDomain()#[0.0,0.0,0.0]#randInDomain()               # Starting guess
     tol = 1e-5
     # Iteratively solve position problem 
     for i in 1:prob.agents
@@ -459,7 +486,7 @@ begin
         temp_result = infoField(prob.pos[i])
         println("Fn Value: $(temp_result)");
     end
-    #plotInfoFieldContours(0.5)  
-    #plotInfoFieldLineContours(0.1)
-    #plotRewardFieldLineContours(0.1)
+    #plotInfoFieldContours(0.1)  
+    plotInfoFieldLineContours(0.1)
+    plotRewardFieldLineContours(0.1)
 end
