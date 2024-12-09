@@ -48,7 +48,7 @@ function infoField(xx::Vector{Float64})
     for ii in 1:4
         inner = 0;
         for jj in 1:3
-            xj = xx[jj].*xvec_normalized[jj]/20+0.1
+            xj = xx[jj].*xvec_normalized[jj]/6+0.3
             Aij = A[jj, ii]
             Pij = P[jj, ii]
             inner = inner + Aij*(xj-Pij)^2
@@ -471,7 +471,7 @@ function plotRewardFieldLineContours(resolution::Float64)
 end
 # Main script
 begin
-    global prob = problemStatement(3, [-30.0 30.0; -30.0 30.0; 0.0 2.0], "Cross-Entropy", Vector{Vector{Float64}}(),2.0) # Number of agents to consider, Environment dimension, opt method
+    global prob = problemStatement(3, [-30.0 30.0; -30.0 30.0; 0.0 2.0], "Cross-Entropy", Vector{Vector{Float64}}(),5.0) # Number of agents to consider, Environment dimension, opt method
     x0 = randInDomain()#[0.0,0.0,0.0]#randInDomain()               # Starting guess
     tol = 1e-5
     # Iteratively solve position problem 
