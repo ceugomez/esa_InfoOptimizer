@@ -1,4 +1,4 @@
-using Optimization, PyPlot, BenchmarkTools, LinearAlgebra, Random, Distributions
+using Optimization, PyPlot, BenchmarkTools, LinearAlgebra, Random, Distributions, Optim
 # structure to store optimization results
 struct optimresult
     result::Vector{Float64}
@@ -132,41 +132,45 @@ end
         return J
     end
 # Optimizer: cross-entropy (custom)
-    function crossentropy(f, x0, ϵ)
-        μ = x0                              # Initial mean guess
-        xmin, xmax = prob.dims[1, 1], prob.dims[1, 2]
-        ymin, ymax = prob.dims[2, 1], prob.dims[2, 2]
-        zmin, zmax = prob.dims[3, 1], prob.dims[3, 2]
-        σ2 = Diagonal((2*[xmax-xmin, ymax-ymin, zmax-zmin]))           # Initial covariance guess
-        i = 1                               # Iterator
-        elites = 100                         # Number of elite samples
-        genpop = 1000                        # Number of general samples
-        maxi = 1000000                        # Iterator upper bound
+function crossentropy(f, x0, ϵ)
+    μ = x0                              # Initial mean guess
+    xmin, xmax = prob.dims[1, 1], prob.dims[1, 2]
+    ymin, ymax = prob.dims[2, 1], prob.dims[2, 2]
+    zmin, zmax = prob.dims[3, 1], prob.dims[3, 2]
+    σ2 = Diagonal((2*[xmax-xmin, ymax-ymin, zmax-zmin]))  # Initial covariance guess
+    i = 1                               # Iterator
+    elites = 100                         # Number of elite samples
+    genpop = 1000                        # Number of general samples
+    maxi = 1000000                       # Iterator upper bound
 
-        # Use BenchmarkTools for precise timing
-        timer = @elapsed begin
-            # Optimization loop
-            while (i < maxi && norm(σ2) > ϵ)
-                σ2 += Diagonal(fill(1e-12, length(x0))) # ensure positive definite
-                dist = MvNormal(μ, σ2)       # Build distribution
-                X = rand(dist, genpop)      # Get samples from distribution
-                samples = Float64[]
-                for j in 1:genpop
-                    push!(samples, f(X[:, j]))
-                end
-                p = sortperm(samples)       # Sort samples by function value
-                elite = X[:, p[1:elites]]   # Select elite samples
+    # Warm up function to ensure compilation
+    dist = MvNormal(μ, σ2)
+    X = rand(dist, genpop)
+    _ = f(X[:, 1])
 
-                # Update mean and covariance
-                μ = mean(elite, dims=2)[:]
-                σ2 = cov(elite')
-                i += 1
+    timer = @btime begin
+        while (i < maxi && norm(σ2) > ϵ)
+            σ2 += Diagonal(fill(1e-12, length(x0)))  # Ensure positive definite
+            dist = MvNormal(μ, σ2)                  # Build distribution
+            X = rand(dist, genpop)                 # Get samples from distribution
+            samples = Float64[]
+            for j in 1:genpop
+                push!(samples, f(X[:, j]))
             end
-        end
+            p = sortperm(samples)                  # Sort samples by function value
+            elite = X[:, p[1:elites]]              # Select elite samples
 
-        # Return optimization result
-        return optimresult(μ, timer, i, genpop * i, f(μ))
+            # Update mean and covariance
+            μ = mean(elite, dims=2)[:]
+            σ2 = cov(elite')
+            i += 1
+        end
     end
+
+    # Return optimization result
+    return optimresult(μ, timer, i, genpop * i, f(μ))
+end
+
 # Functions to visualize the information field
     function visualizeField(dims::Matrix{Int64}, flags::Vector{Bool})
         # Generate a mesh grid (replacement for Python's MeshGrid)
@@ -492,13 +496,68 @@ end
         prob = Nothing
         return out
     end
+    function OptimizeWithOptim(x0::Vector{Float64})
+        # Objective function for Optim.jl
+        objective(X) = reward(X)
+
+        # Perform optimization using Nelder-Mead or another optimizer of choice
+        result = optimize(objective, initial_X, 
+                        NelderMead())
+
+            println("Optimization converged successfully.")
+            println("Minimum value: ", result.minimum)
+            println("Optimal X: ", result.minimizer)
+
+
+    return result
+    end
 function Plot()
     plotInfoFieldContours(0.1)  
     plotInfoFieldLineContours(0.1)
     plotRewardFieldLineContours(0.1)
 end
+
+# Function to optimize and evaluate performance
+    function optimize_and_evaluate()
+        results = Float64[]  # Store results of Cross-Entropy
+        optimal_value = nothing
+
+        # Run `Optim.jl` to find the optimal value
+        function objective(X)
+            return reward(X)
+        end
+
+        x0_optim = randInDomain()  # Random initial point for Optim.jl
+        optim_result = optimize(objective, x0_optim, NelderMead())
+        optimal_value = optim_result.minimum
+
+        # Run Cross-Entropy optimizer 10 times
+        for _ in 1:10
+            x0_ce = randInDomain()  # Random initial point for Cross-Entropy
+            ce_result = crossentropy(reward, x0_ce, 1e-5)
+            # Calculate the performance percentage relative to the optimal value
+            percentage = ce_result.fnval / optimal_value * 100.0
+            push!(results, percentage)
+        end
+
+        return results, optimal_value
+    end
+
+    # Plot results
+    function plot_results(results)
+        figure()
+        boxplot(results, labels=["Cross-Entropy Performance"])
+        ylabel("Performance (% of Optimal Value)")
+        title("Cross-Entropy Optimization Performance")
+        grid(true)
+        show()
+    end
 # Main script
-# begin
-#     prob = OptimProblemStatement(3, [-30.0 30.0; -30.0 30.0; 0.0 2.0], "Cross-Entropy", Vector{Vector{Float64}}(),5.0)
-#     OptimizeEnvironment(prob, 1e-5); 
-# end
+begin
+    global prob = OptimProblemStatement(3, [-30.0 30.0; -30.0 30.0; 0.0 2.0], "Cross-Entropy", Vector{Vector{Float64}}(), 5.0)
+    results, optimal_value = optimize_and_evaluate()
+    println("Optimal Value Found Using Optim.jl: $(optimal_value)")
+    println("Cross-Entropy Results (Percentage of Optimal):")
+    println(results)
+    plot_results(results)
+end
